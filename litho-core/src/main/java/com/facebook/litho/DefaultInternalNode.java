@@ -146,8 +146,8 @@ public class DefaultInternalNode implements InternalNode, Cloneable {
   private @Nullable ArrayList<Component> mComponentsNeedingPreviousRenderData;
   private @Nullable ArrayList<WorkingRangeContainer.Registration> mWorkingRangeRegistrations;
   private @Nullable String mTestKey;
-  private @Nullable Set<DebugComponent> mDebugComponents = null;
-  private @Nullable List<Component> mUnresolvedComponents = null;
+  private @Nullable Set<DebugComponent> mDebugComponents;
+  private @Nullable List<Component> mUnresolvedComponents;
 
   private boolean mDuplicateParentState;
   private boolean mForceViewWrapping;
@@ -483,9 +483,6 @@ public class DefaultInternalNode implements InternalNode, Cloneable {
 
   @Override
   public @Nullable InternalNode getChildAt(int index) {
-    if (mYogaNode.getChildAt(index) == null) {
-      return null;
-    }
     return (InternalNode) mYogaNode.getChildAt(index).getData();
   }
 
@@ -696,11 +693,7 @@ public class DefaultInternalNode implements InternalNode, Cloneable {
   @Override
   public NodeInfo getOrCreateNodeInfo() {
     if (mNodeInfo == null) {
-      if (ComponentsConfiguration.isSparseNodeInfoIsEnabled) {
-        mNodeInfo = new SparseNodeInfo();
-      } else {
-        mNodeInfo = new DefaultNodeInfo();
-      }
+      mNodeInfo = new DefaultNodeInfo();
     }
 
     return mNodeInfo;
@@ -1664,7 +1657,7 @@ public class DefaultInternalNode implements InternalNode, Cloneable {
     // 2. Clone this layout.
     final DefaultInternalNode copy = clone();
 
-    // 3.  Clone the YogaNode of this layout and set it on the cloned layout.
+    // 3. Clone the YogaNode of this layout and set it on the cloned layout.
     YogaNode node = mYogaNode.cloneWithoutChildren();
     copy.mYogaNode = node;
     node.setData(copy);
@@ -1672,7 +1665,7 @@ public class DefaultInternalNode implements InternalNode, Cloneable {
     // 4. Deep clone all children and add it to the cloned YogaNode
     final int count = getChildCount();
     for (int i = 0; i < count; i++) {
-      copy.addChildAt(getChildAt(i).deepClone(), i);
+      copy.child(getChildAt(i).deepClone());
     }
 
     copy.resetResolvedLayoutProperties();
@@ -1986,7 +1979,7 @@ public class DefaultInternalNode implements InternalNode, Cloneable {
       }
 
       // 4.3 Add the child to the cloned yoga node
-      copiedNode.addChildAt(copy.getYogaNode(), i);
+      layout.child(copy);
     }
 
     if (isTracing) {
@@ -2048,10 +2041,10 @@ public class DefaultInternalNode implements InternalNode, Cloneable {
   static @ReconciliationMode int getReconciliationMode(
       ComponentContext c, InternalNode current, Set<String> keys) {
     final List<Component> components = current.getComponents();
-    final Component root = components.isEmpty() ? null : components.get(0);
+    final Component root = current.getHeadComponent();
 
     // 1.0 check early exit conditions
-    if (c == null || root == null) {
+    if (c == null || root == null || current.isNestedTreeHolder()) {
       return ReconciliationMode.RECREATE;
     }
 

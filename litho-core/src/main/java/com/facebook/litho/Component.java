@@ -237,6 +237,7 @@ public abstract class Component extends ComponentLifecycle
 
   /**
    * Get a key that is unique to this component within its tree.
+   *
    * @return
    */
   String getGlobalKey() {
@@ -259,10 +260,7 @@ public abstract class Component extends ComponentLifecycle
     return mHasManualKey;
   }
 
-  /**
-   *
-   * @return a key that is local to the component's parent.
-   */
+  /** @return a key that is local to the component's parent. */
   String getKey() {
     if (mKey == null && !mHasManualKey) {
       mKey = Integer.toString(getTypeId());
@@ -272,6 +270,7 @@ public abstract class Component extends ComponentLifecycle
 
   /**
    * Set a key that is local to the parent of this component.
+   *
    * @param key key
    */
   void setKey(String key) {
@@ -481,9 +480,7 @@ public abstract class Component extends ComponentLifecycle
     outputSize.height = lastMeasuredLayout.getHeight();
   }
 
-  protected void copyInterStageImpl(Component component) {
-
-  }
+  protected void copyInterStageImpl(Component component) {}
 
   static boolean isHostSpec(@Nullable Component component) {
     return (component instanceof HostComponent);
@@ -648,9 +645,7 @@ public abstract class Component extends ComponentLifecycle
 
       mErrorEventHandler =
           new EventHandler<>(
-              parentEventDispatcherProvider,
-              ERROR_EVENT_HANDLER_ID,
-              new Object[] {parentContext});
+              parentEventDispatcherProvider, ERROR_EVENT_HANDLER_ID, new Object[] {parentContext});
     }
   }
 
@@ -712,11 +707,7 @@ public abstract class Component extends ComponentLifecycle
 
   private CommonProps getOrCreateCommonProps() {
     if (mCommonProps == null) {
-      if (ComponentsConfiguration.isSparseCommonPropsHolderIsEnabled) {
-        mCommonProps = new SparseCommonPropsHolder();
-      } else {
-        mCommonProps = new CommonPropsHolder();
-      }
+      mCommonProps = new CommonPropsHolder();
     }
 
     return mCommonProps;
@@ -1023,6 +1014,22 @@ public abstract class Component extends ComponentLifecycle
       return getThis();
     }
 
+    /**
+     * If true, component duplicates its drawable state (focused, pressed, etc.) from the direct
+     * parent.
+     *
+     * <p>In the following example, when {@code Row} gets pressed state, its child {@code
+     * OtherStatefulDrawable} will get that pressed state within itself, too:
+     *
+     * <pre>{@code
+     * Row.create(c)
+     *     .drawable(stateListDrawable)
+     *     .clickable(true)
+     *     .child(
+     *         OtherStatefulDrawable.create(c)
+     *             .duplicateParentState(true))
+     * }</pre>
+     */
     public T duplicateParentState(boolean duplicateParentState) {
       mComponent.getOrCreateCommonProps().duplicateParentState(duplicateParentState);
       return getThis();
@@ -2028,7 +2035,12 @@ public abstract class Component extends ComponentLifecycle
         @Override
         public @Nullable Object dispatchOnEvent(EventHandler eventHandler, Object eventState) {
           if (eventHandler.id == ERROR_EVENT_HANDLER_ID) {
-            throw new RuntimeException(((ErrorEvent) eventState).exception);
+            final Exception e = ((ErrorEvent) eventState).exception;
+            if (e instanceof RuntimeException) {
+              throw (RuntimeException) e;
+            } else {
+              throw new RuntimeException(e);
+            }
           }
           return null;
         }

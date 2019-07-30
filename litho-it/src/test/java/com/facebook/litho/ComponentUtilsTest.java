@@ -300,7 +300,7 @@ public class ComponentUtilsTest {
     }
   }
 
-  private static class StateTest implements StateContainer {
+  private static class StateTest extends StateContainer {
     @Comparable(type = Comparable.PRIMITIVE)
     boolean state1;
 
@@ -313,5 +313,8 @@ public class ComponentUtilsTest {
     }
 
     StateTest() {}
+
+    @Override
+    public void applyStateUpdate(StateUpdate stateUpdate) {}
   }
 }

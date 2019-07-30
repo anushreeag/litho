@@ -19,8 +19,8 @@ package com.facebook.litho.specmodels.generator;
 import static com.facebook.litho.specmodels.generator.GeneratorConstants.DYNAMIC_PROPS;
 import static com.facebook.litho.specmodels.generator.GeneratorConstants.PREVIOUS_RENDER_DATA_FIELD_NAME;
 import static com.facebook.litho.specmodels.generator.GeneratorConstants.STATE_CONTAINER_FIELD_NAME;
+import static com.facebook.litho.specmodels.generator.StateContainerGenerator.getStateContainerClassName;
 
-import androidx.annotation.VisibleForTesting;
 import com.facebook.litho.annotations.Comparable;
 import com.facebook.litho.annotations.Param;
 import com.facebook.litho.annotations.Prop;
@@ -55,7 +55,6 @@ import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
-import com.squareup.javapoet.TypeVariableName;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -112,13 +111,12 @@ public class ComponentBodyGenerator {
     }
 
     builder.addTypeSpecDataHolder(generateCopyInterStageImpl(specModel));
-    builder.addTypeSpecDataHolder(generateOnUpdateStateMethods(specModel));
     builder.addTypeSpecDataHolder(generateMakeShallowCopy(specModel, hasState));
     builder.addTypeSpecDataHolder(generateGetDynamicProps(specModel));
     builder.addTypeSpecDataHolder(generateBindDynamicProp(specModel));
 
     if (hasState) {
-      builder.addType(generateStateContainer(specModel));
+      builder.addType(StateContainerGenerator.generate(specModel));
     }
     if (needsRenderDataInfra) {
       builder.addType(generatePreviousRenderDataContainerImpl(specModel));
@@ -136,79 +134,6 @@ public class ComponentBodyGenerator {
     typeSpecDataHolder.addField(
         FieldSpec.builder(optionalField.getTypeName(), optionalField.getName()).build());
     return typeSpecDataHolder.build();
-  }
-
-  static TypeSpec generateStateContainer(SpecModel specModel) {
-    final TypeSpec.Builder stateContainerClassBuilder =
-        TypeSpec.classBuilder(getStateContainerClassName(specModel))
-            .addSuperinterface(specModel.getStateContainerClass())
-            .addAnnotation(
-                AnnotationSpec.builder(VisibleForTesting.class)
-                    .addMember("otherwise", "$L", VisibleForTesting.PRIVATE)
-                    .build())
-            .addModifiers(Modifier.STATIC)
-            .addTypeVariables(specModel.getTypeVariables());
-
-    final boolean hasUpdateStateWithTransition =
-        StateGenerator.hasUpdateStateWithTransition(specModel);
-
-    if (hasUpdateStateWithTransition) {
-      stateContainerClassBuilder.addSuperinterface(specModel.getTransitionContainerClass());
-    }
-
-    for (StateParamModel stateValue : specModel.getStateValues()) {
-      stateContainerClassBuilder.addField(
-          FieldSpec.builder(stateValue.getTypeName(), stateValue.getName())
-              .addAnnotation(State.class)
-              .addAnnotation(
-                  AnnotationSpec.builder(Comparable.class)
-                      .addMember("type", "$L", getComparableType(specModel, stateValue))
-                      .build())
-              .build());
-    }
-
-    if (hasUpdateStateWithTransition) {
-      stateContainerClassBuilder.addField(
-          FieldSpec.builder(
-                  ParameterizedTypeName.get(ClassNames.LIST, specModel.getTransitionClass().box()),
-                  GeneratorConstants.STATE_TRANSITIONS_FIELD_NAME)
-              .initializer("new $T<>()", ClassNames.ARRAY_LIST)
-              .build());
-
-      final String transitionsCopyVarName = "transitionsCopy";
-
-      stateContainerClassBuilder.addMethod(
-          MethodSpec.methodBuilder("consumeTransitions")
-              .addModifiers(Modifier.PUBLIC)
-              .addAnnotation(Override.class)
-              .returns(
-                  ParameterizedTypeName.get(ClassNames.LIST, specModel.getTransitionClass().box()))
-              .addCode(
-                  CodeBlock.builder()
-                      .beginControlFlow(
-                          "if ($L.isEmpty())", GeneratorConstants.STATE_TRANSITIONS_FIELD_NAME)
-                      .addStatement("return $T.EMPTY_LIST", ClassNames.COLLECTIONS)
-                      .endControlFlow()
-                      .build())
-              .addStatement(
-                  "$T<$T> $N",
-                  ClassNames.LIST,
-                  specModel.getTransitionClass(),
-                  transitionsCopyVarName)
-              .beginControlFlow(
-                  "synchronized ($L)", GeneratorConstants.STATE_TRANSITIONS_FIELD_NAME)
-              .addStatement(
-                  "$N = new $T<>($N)",
-                  transitionsCopyVarName,
-                  ClassNames.ARRAY_LIST,
-                  GeneratorConstants.STATE_TRANSITIONS_FIELD_NAME)
-              .addStatement("$N.clear()", GeneratorConstants.STATE_TRANSITIONS_FIELD_NAME)
-              .endControlFlow()
-              .addStatement("return $N", transitionsCopyVarName)
-              .build());
-    }
-
-    return stateContainerClassBuilder.build();
   }
 
   static TypeSpec generatePreviousRenderDataContainerImpl(SpecModel specModel) {
@@ -274,39 +199,6 @@ public class ComponentBodyGenerator {
   static String getInstanceRefName(SpecModel specModel) {
     final String refClassName = specModel.getComponentName() + "Ref";
     return refClassName.substring(0, 1).toLowerCase(Locale.ROOT) + refClassName.substring(1);
-  }
-
-  static String getStateContainerClassName(SpecModel specModel) {
-    if (specModel.getStateValues().isEmpty()) {
-      return specModel.getStateContainerClass().toString();
-    } else {
-      return specModel.getComponentName() + GeneratorConstants.STATE_CONTAINER_NAME_SUFFIX;
-    }
-  }
-
-  static String getStateContainerClassNameWithTypeVars(SpecModel specModel) {
-    if (specModel.getStateValues().isEmpty()) {
-      return specModel.getStateContainerClass().toString();
-    } else {
-      return getStateContainerClassName(specModel) + getTypeVariablesString(specModel);
-    }
-  }
-
-  private static String getTypeVariablesString(SpecModel specModel) {
-    final ImmutableList<TypeVariableName> typeVariables = specModel.getTypeVariables();
-    if (typeVariables.isEmpty()) {
-      return "";
-    }
-
-    final StringBuilder stringBuilder = new StringBuilder();
-    stringBuilder.append("<");
-    for (int i = 0, size = typeVariables.size(); i < size - 1; i++) {
-      stringBuilder.append(typeVariables.get(i).name).append(", ");
-    }
-
-    stringBuilder.append(typeVariables.get(typeVariables.size() - 1)).append(">");
-
-    return stringBuilder.toString();
   }
 
   static MethodSpec generateStateContainerGetter(TypeName stateContainerClassName) {
@@ -549,48 +441,6 @@ public class ComponentBodyGenerator {
     return typeSpecDataHolder.build();
   }
 
-  static TypeSpecDataHolder generateOnUpdateStateMethods(SpecModel specModel) {
-    TypeSpecDataHolder.Builder typeSpecDataHolder = TypeSpecDataHolder.newBuilder();
-
-    final ArrayList<SpecMethodModel<UpdateStateMethod, Void>> updateStateMethods =
-        new ArrayList<>(specModel.getUpdateStateMethods());
-
-    if (StateGenerator.hasUpdateStateWithTransition(specModel)) {
-      updateStateMethods.addAll(specModel.getUpdateStateWithTransitionMethods());
-    }
-
-    for (SpecMethodModel<UpdateStateMethod, Void> updateStateMethodModel : updateStateMethods) {
-      final String stateUpdateClassName = getStateUpdateClassName(updateStateMethodModel);
-      final List<MethodParamModel> params = getParams(updateStateMethodModel);
-
-      final MethodSpec.Builder methodSpecBuilder = MethodSpec
-          .methodBuilder("create" + stateUpdateClassName)
-          .addModifiers(Modifier.PRIVATE)
-          .returns(ClassName.bestGuess(stateUpdateClassName));
-
-      for (MethodParamModel param : params) {
-        methodSpecBuilder
-            .addParameter(ParameterSpec.builder(param.getTypeName(), param.getName()).build());
-      }
-
-      final CodeBlock.Builder constructor = CodeBlock.builder();
-      constructor.add("return new $N(", stateUpdateClassName);
-
-      for (int i = 0, size = params.size(); i < size; i++) {
-        constructor.add(params.get(i).getName());
-        if (i < params.size() - 1) {
-          constructor.add(", ");
-        }
-      }
-      constructor.add(");\n");
-
-      methodSpecBuilder.addCode(constructor.build());
-      typeSpecDataHolder.addMethod(methodSpecBuilder.build());
-    }
-
-    return typeSpecDataHolder.build();
-  }
-
   static TypeSpecDataHolder generateMakeShallowCopy(SpecModel specModel, boolean hasState) {
     TypeSpecDataHolder.Builder typeSpecDataHolder = TypeSpecDataHolder.newBuilder();
 
@@ -644,7 +494,7 @@ public class ComponentBodyGenerator {
     }
 
     final String stateContainerClassName = getStateContainerClassName(specModel);
-    if (stateContainerClassName != null && hasState) {
+    if (hasState) {
       builder.addStatement(
           "component.$N = new $T()",
           STATE_CONTAINER_FIELD_NAME,
@@ -753,14 +603,6 @@ public class ComponentBodyGenerator {
     }
 
     return params;
-  }
-
-  private static String getStateUpdateClassName(
-      SpecMethodModel<UpdateStateMethod, Void> updateStateMethodModel) {
-    String methodName = updateStateMethodModel.name.toString();
-    return methodName.substring(0, 1).toUpperCase(Locale.ROOT)
-        + methodName.substring(1)
-        + GeneratorConstants.STATE_UPDATE_NAME_SUFFIX;
   }
 
   static CodeBlock getCompareStatement(
@@ -885,8 +727,7 @@ public class ComponentBodyGenerator {
     return codeBlock.build();
   }
 
-  private static @Comparable.Type int getComparableType(
-      SpecModel specModel, MethodParamModel field) {
+  static @Comparable.Type int getComparableType(SpecModel specModel, MethodParamModel field) {
     return getComparableType(field.getTypeName(), field.getTypeSpec());
   }
 

@@ -29,7 +29,6 @@ import static org.mockito.Mockito.verify;
 
 import android.os.Looper;
 import androidx.recyclerview.widget.OrientationHelper;
-import androidx.recyclerview.widget.RecyclerView;
 import com.facebook.litho.Component;
 import com.facebook.litho.ComponentContext;
 import com.facebook.litho.ComponentTree;
@@ -61,7 +60,7 @@ public class RecyclerBinderWrapContentTest {
   private TestRecyclerView mRecyclerView;
 
   @Before
-  public void setup() throws Exception {
+  public void setup() {
     mComponentContext = new ComponentContext(RuntimeEnvironment.application);
     mRecyclerView = new TestRecyclerView(mComponentContext.getAndroidContext());
 
@@ -74,9 +73,9 @@ public class RecyclerBinderWrapContentTest {
   public void testWrapContentWithInsertOnVertical() {
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
     recyclerBinder.mount(mRecyclerView);
 
     final Component component =
@@ -116,9 +115,9 @@ public class RecyclerBinderWrapContentTest {
     final int NUM_TO_INSERT = 6;
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
     recyclerBinder.mount(mRecyclerView);
 
     final ArrayList<RenderInfo> renderInfos = new ArrayList<>();
@@ -262,9 +261,9 @@ public class RecyclerBinderWrapContentTest {
   public void testWrapContentWithInsertAsyncOnVertical() {
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
 
     recyclerBinder.mount(mRecyclerView);
 
@@ -309,9 +308,9 @@ public class RecyclerBinderWrapContentTest {
     final int NUM_TO_INSERT = 6;
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
 
     recyclerBinder.mount(mRecyclerView);
 
@@ -478,11 +477,11 @@ public class RecyclerBinderWrapContentTest {
   public void testWrapContentWithInsertOnHorizontal() {
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .layoutInfo(
-            new LinearLayoutInfo(mComponentContext, OrientationHelper.HORIZONTAL, false))
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .layoutInfo(
+                new LinearLayoutInfo(mComponentContext, OrientationHelper.HORIZONTAL, false))
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
 
     recyclerBinder.mount(mRecyclerView);
 
@@ -521,11 +520,11 @@ public class RecyclerBinderWrapContentTest {
     final int NUM_TO_INSERT = 6;
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .layoutInfo(
-            new LinearLayoutInfo(mComponentContext, OrientationHelper.HORIZONTAL, false))
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .layoutInfo(
+                new LinearLayoutInfo(mComponentContext, OrientationHelper.HORIZONTAL, false))
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
 
     recyclerBinder.mount(mRecyclerView);
 
@@ -670,11 +669,11 @@ public class RecyclerBinderWrapContentTest {
   public void testWrapContentWithInsertAsyncOnHorizontal() {
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .layoutInfo(
-            new LinearLayoutInfo(mComponentContext, OrientationHelper.HORIZONTAL, false))
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .layoutInfo(
+                new LinearLayoutInfo(mComponentContext, OrientationHelper.HORIZONTAL, false))
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
 
     recyclerBinder.mount(mRecyclerView);
 
@@ -718,11 +717,11 @@ public class RecyclerBinderWrapContentTest {
     final int NUM_TO_INSERT = 6;
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .layoutInfo(
-            new LinearLayoutInfo(mComponentContext, OrientationHelper.HORIZONTAL, false))
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .layoutInfo(
+                new LinearLayoutInfo(mComponentContext, OrientationHelper.HORIZONTAL, false))
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
 
     recyclerBinder.mount(mRecyclerView);
 
@@ -890,9 +889,9 @@ public class RecyclerBinderWrapContentTest {
         mock(ChangeSetCompleteCallback.class);
     final RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .rangeRatio(RANGE_RATIO)
-        .wrapContent(true)
-        .build(mComponentContext);
+            .rangeRatio(RANGE_RATIO)
+            .wrapContent(true)
+            .build(mComponentContext);
     recyclerBinder.mount(recyclerView);
 
     final Component component =
@@ -911,8 +910,7 @@ public class RecyclerBinderWrapContentTest {
     recyclerBinder.notifyChangeSetComplete(false, changeSetCompleteCallback);
 
     verify(changeSetCompleteCallback).onDataRendered(eq(true), anyLong());
-    verifyPostOnAnimationWasCalledNTimesWith(
-        mRecyclerView, 0, recyclerBinder.mRemeasureRunnable);
+    verifyPostOnAnimationWasCalledNTimesWith(mRecyclerView, 0, recyclerBinder.mRemeasureRunnable);
   }
 
   private RecyclerBinder prepareBinderWithMeasuredChildSize(
@@ -930,9 +928,9 @@ public class RecyclerBinderWrapContentTest {
       boolean async) {
     RecyclerBinder recyclerBinder =
         new RecyclerBinder.Builder()
-        .layoutInfo(new LinearLayoutInfo(mComponentContext, orientation, false))
-        .wrapContent(true)
-        .build(mComponentContext);
+            .layoutInfo(new LinearLayoutInfo(mComponentContext, orientation, false))
+            .wrapContent(true)
+            .build(mComponentContext);
 
     Size size = new Size();
     recyclerBinder.measure(size, widthSpec, heightSpec, mock(EventHandler.class));
@@ -981,5 +979,4 @@ public class RecyclerBinderWrapContentTest {
       assertThat(runnable).isSameAs(r);
     }
   }
-
 }

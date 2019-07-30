@@ -258,7 +258,7 @@ public class LithoView extends ComponentHost {
   protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
     widthMeasureSpec =
         DoubleMeasureFixUtil.correctWidthSpecForAndroidDoubleMeasureBug(
-            getResources(), widthMeasureSpec);
+            getResources(), getContext().getPackageManager(), widthMeasureSpec);
 
     // mAnimatedWidth/mAnimatedHeight >= 0 if something is driving a width/height animation.
     final boolean animating = mAnimatedWidth != -1 || mAnimatedHeight != -1;
@@ -664,35 +664,10 @@ public class LithoView extends ComponentHost {
 
   @Override
   public void draw(Canvas canvas) {
-    final ComponentsLogger logger =
-        getComponentTree() == null ? null : getComponentTree().getContext().getLogger();
-    final PerfEvent perfEvent =
-        logger != null
-            ? LogTreePopulator.populatePerfEventFromLogger(
-                getComponentContext(),
-                logger,
-                logger.newPerformanceEvent(getComponentContext(), FrameworkLogEvents.EVENT_DRAW))
-            : null;
-    if (perfEvent != null) {
-      setPerfEvent(perfEvent);
-    }
-
     super.draw(canvas);
 
     if (mOnPostDrawListener != null) {
-      if (perfEvent != null) {
-        perfEvent.markerPoint("POST_DRAW_START");
-      }
       mOnPostDrawListener.onPostDraw();
-      if (perfEvent != null) {
-        perfEvent.markerPoint("POST_DRAW_END");
-      }
-    }
-
-    if (perfEvent != null) {
-      perfEvent.markerAnnotate(
-          FrameworkLogEvents.PARAM_ROOT_COMPONENT, getComponentTree().getRoot().getSimpleName());
-      logger.logPerfEvent(perfEvent);
     }
   }
 
@@ -813,6 +788,68 @@ public class LithoView extends ComponentHost {
     }
 
     mMountState.mount(layoutState, currentVisibleArea, processVisibilityOutputs);
+  }
+
+  /**
+   * Dispatch a visibility events to all the components hosted in this LithoView.
+   *
+   * <p>Marked as @Deprecated to indicate this method is experimental and should not be widely used.
+   *
+   * <p>NOTE: Can only be used when Incremental Mount is disabled! Call this method when the
+   * LithoView is considered eligible for the visibility event (i.e. only dispatch VisibleEvent when
+   * the LithoView is visible in its container).
+   *
+   * @param visibilityEventType The class type of the visibility event to dispatch. Supported:
+   *     VisibleEvent.class, InvisibleEvent.class, FocusedVisibleEvent.class,
+   *     UnfocusedVisibleEvent.class, FullImpressionVisibleEvent.class.
+   */
+  @Deprecated
+  public void dispatchVisibilityEvent(Class<?> visibilityEventType) {
+    if (isIncrementalMountEnabled()) {
+      throw new IllegalStateException(
+          "dispatchVisibilityEvent - "
+              + "Can't manually trigger visibility events when incremental mount is enabled");
+    }
+
+    LayoutState layoutState =
+        mComponentTree == null ? null : mComponentTree.getMainThreadLayoutState();
+
+    if (layoutState != null && visibilityEventType != null) {
+      for (int i = 0; i < layoutState.getVisibilityOutputCount(); i++) {
+        dispatchVisibilityEvent(layoutState.getVisibilityOutputAt(i), visibilityEventType);
+      }
+
+      List<LithoView> childViews = mMountState.getChildLithoViewsFromCurrentlyMountedItems();
+      for (LithoView lithoView : childViews) {
+        lithoView.dispatchVisibilityEvent(visibilityEventType);
+      }
+    }
+  }
+
+  private void dispatchVisibilityEvent(
+      VisibilityOutput visibilityOutput, Class<?> visibilityEventType) {
+    if (visibilityEventType == VisibleEvent.class) {
+      if (visibilityOutput.getVisibleEventHandler() != null) {
+        EventDispatcherUtils.dispatchOnVisible(visibilityOutput.getVisibleEventHandler());
+      }
+    } else if (visibilityEventType == InvisibleEvent.class) {
+      if (visibilityOutput.getInvisibleEventHandler() != null) {
+        EventDispatcherUtils.dispatchOnInvisible(visibilityOutput.getInvisibleEventHandler());
+      }
+    } else if (visibilityEventType == FocusedVisibleEvent.class) {
+      if (visibilityOutput.getFocusedEventHandler() != null) {
+        EventDispatcherUtils.dispatchOnFocused(visibilityOutput.getFocusedEventHandler());
+      }
+    } else if (visibilityEventType == UnfocusedVisibleEvent.class) {
+      if (visibilityOutput.getUnfocusedEventHandler() != null) {
+        EventDispatcherUtils.dispatchOnUnfocused(visibilityOutput.getUnfocusedEventHandler());
+      }
+    } else if (visibilityEventType == FullImpressionVisibleEvent.class) {
+      if (visibilityOutput.getFullImpressionEventHandler() != null) {
+        EventDispatcherUtils.dispatchOnFullImpression(
+            visibilityOutput.getFullImpressionEventHandler());
+      }
+    }
   }
 
   void processVisibilityOutputs(LayoutState layoutState, Rect currentVisibleArea) {

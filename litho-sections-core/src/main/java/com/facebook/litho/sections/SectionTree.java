@@ -26,7 +26,6 @@ import static com.facebook.litho.FrameworkLogEvents.PARAM_SET_ROOT_ON_BG_THREAD;
 import static com.facebook.litho.HandlerInstrumenter.instrumentLithoHandler;
 import static com.facebook.litho.ThreadUtils.assertMainThread;
 import static com.facebook.litho.ThreadUtils.isMainThread;
-import static com.facebook.litho.sections.SectionLifecycle.StateUpdate;
 
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -46,10 +45,12 @@ import com.facebook.litho.EventTriggersContainer;
 import com.facebook.litho.LithoHandler;
 import com.facebook.litho.LithoHandler.DefaultLithoHandler;
 import com.facebook.litho.PerfEvent;
+import com.facebook.litho.StateContainer;
 import com.facebook.litho.ThreadTracingRunnable;
 import com.facebook.litho.ThreadUtils;
 import com.facebook.litho.TreeProps;
 import com.facebook.litho.config.ComponentsConfiguration;
+import com.facebook.litho.sections.ChangesetDebugConfiguration.ChangesetDebugListener;
 import com.facebook.litho.sections.SectionsLogEventUtils.ApplyNewChangeSet;
 import com.facebook.litho.sections.config.SectionsConfiguration;
 import com.facebook.litho.sections.logger.SectionsDebugLogger;
@@ -59,7 +60,6 @@ import com.facebook.litho.widget.SectionsDebug;
 import com.facebook.litho.widget.SmoothScrollAlignmentType;
 import com.facebook.litho.widget.ViewportInfo;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -159,6 +159,7 @@ public class SectionTree {
   private final Map<String, Range> mLastRanges = new HashMap<>();
   private final boolean mForceSyncStateUpdates;
   private final boolean mUseBackgroundChangeSets;
+  private final @Nullable ChangesetDebugListener mChangesetDebug;
 
   private LoadEventsHandler mLoadEventsHandler;
 
@@ -316,6 +317,7 @@ public class SectionTree {
     changeSetThreadHandler = instrumentLithoHandler(changeSetThreadHandler);
     mCalculateChangeSetRunnable = new CalculateChangeSetRunnable(changeSetThreadHandler);
     mCalculateChangeSetOnMainThreadRunnable = new CalculateChangeSetRunnable(mMainThreadHandler);
+    mChangesetDebug = ChangesetDebugConfiguration.getListener();
   }
 
   /**
@@ -844,10 +846,11 @@ public class SectionTree {
    * calling this method.
    *
    * @param key The unique key of the {@link Section} in the tree.
-   * @param stateUpdate An implementation of {@link StateUpdate} that knows how to transition to the
-   *     new state.
+   * @param stateUpdate An implementation of {@link StateContainer.StateUpdate} that knows how to
+   *     transition to the new state.
    */
-  synchronized void updateState(String key, StateUpdate stateUpdate, String attribution) {
+  synchronized void updateState(
+      String key, StateContainer.StateUpdate stateUpdate, String attribution) {
     if (mAsyncStateUpdates) {
       updateStateAsync(key, stateUpdate, attribution);
     } else {
@@ -864,10 +867,11 @@ public class SectionTree {
    * SectionTree ChangesetThread.
    *
    * @param key The unique key of the {@link Section} in the tree.
-   * @param stateUpdate An implementation of {@link StateUpdate} that knows how to transition to the
-   *     new state.
+   * @param stateUpdate An implementation of {@link StateContainer.StateUpdate} that knows how to
+   *     transition to the new state.
    */
-  synchronized void updateStateAsync(String key, StateUpdate stateUpdate, String attribution) {
+  synchronized void updateStateAsync(
+      String key, StateContainer.StateUpdate stateUpdate, String attribution) {
     if (mForceSyncStateUpdates) {
       updateState(key, stateUpdate, attribution);
     } else {
@@ -877,7 +881,7 @@ public class SectionTree {
     }
   }
 
-  synchronized void updateStateLazy(String key, StateUpdate stateUpdate) {
+  synchronized void updateStateLazy(String key, StateContainer.StateUpdate stateUpdate) {
     addStateUpdateInternal(key, stateUpdate, true);
   }
 
@@ -903,7 +907,7 @@ public class SectionTree {
   }
 
   private synchronized void addStateUpdateInternal(
-      String key, StateUpdate stateUpdate, boolean isLazyStateUpdate) {
+      String key, StateContainer.StateUpdate stateUpdate, boolean isLazyStateUpdate) {
     if (mReleased) {
       return;
     }
@@ -1064,7 +1068,7 @@ public class SectionTree {
           }
 
           mEventHandlersController.clearUnusedEventHandlers();
-          postNewChangeSets(tracedThrowable);
+          postNewChangeSets(tracedThrowable, source, attribution, oldRoot);
         }
 
         synchronized (this) {
@@ -1186,15 +1190,19 @@ public class SectionTree {
     }
   }
 
-  private void postNewChangeSets(Throwable tracedThrowable) {
+  private void postNewChangeSets(
+      Throwable tracedThrowable,
+      final int source,
+      @Nullable final String attribution,
+      @Nullable final Section oldSection) {
     if (mUseBackgroundChangeSets) {
-      applyChangeSetsToTargetBackgroundAllowed();
+      applyChangeSetsToTargetBackgroundAllowed(source, attribution, oldSection);
       return;
     }
 
     if (isMainThread()) {
       try {
-        applyChangeSetsToTargetUIThreadOnly();
+        applyChangeSetsToTargetUIThreadOnly(source, attribution, oldSection);
       } catch (IndexOutOfBoundsException e) {
         throw new RuntimeException(getDebugInfo(this) + e.getMessage(), e);
       }
@@ -1209,7 +1217,7 @@ public class SectionTree {
             public void tracedRun(Throwable tracedThrowable) {
               final SectionTree tree = SectionTree.this;
               try {
-                tree.applyChangeSetsToTargetUIThreadOnly();
+                tree.applyChangeSetsToTargetUIThreadOnly(source, attribution, oldSection);
               } catch (IndexOutOfBoundsException e) {
                 throw new RuntimeException(getDebugInfo(tree) + e.getMessage(), e);
               }
@@ -1220,7 +1228,8 @@ public class SectionTree {
   }
 
   @ThreadConfined(ThreadConfined.ANY)
-  private void applyChangeSetsToTargetBackgroundAllowed() {
+  private void applyChangeSetsToTargetBackgroundAllowed(
+      int source, @Nullable String attribution, @Nullable Section oldSection) {
     if (!mUseBackgroundChangeSets) {
       throw new IllegalStateException(
           "Must use UIThread-only variant when background change sets are not enabled.");
@@ -1240,7 +1249,8 @@ public class SectionTree {
           return;
         }
 
-        applyChangeSetsToTargetUnchecked(mCurrentSection, mPendingChangeSets);
+        applyChangeSetsToTargetUnchecked(
+            mCurrentSection, oldSection, mPendingChangeSets, source, attribution);
         mPendingChangeSets.clear();
       }
 
@@ -1268,7 +1278,8 @@ public class SectionTree {
   }
 
   @UiThread
-  private void applyChangeSetsToTargetUIThreadOnly() {
+  private void applyChangeSetsToTargetUIThreadOnly(
+      int source, @Nullable String attribution, @Nullable Section oldSection) {
     assertMainThread();
     if (mUseBackgroundChangeSets) {
       throw new IllegalStateException(
@@ -1293,7 +1304,7 @@ public class SectionTree {
         currentSection = mCurrentSection;
       }
 
-      applyChangeSetsToTargetUnchecked(currentSection, changeSets);
+      applyChangeSetsToTargetUnchecked(currentSection, oldSection, changeSets, source, attribution);
       maybeDispatchFocusRequests();
     } finally {
       if (isTracing) {
@@ -1310,14 +1321,18 @@ public class SectionTree {
   }
 
   private void applyChangeSetsToTargetUnchecked(
-      final Section currentSection, List<ChangeSet> changeSets) {
+      final Section currentSection,
+      @Nullable final Section oldSection,
+      List<ChangeSet> changeSets,
+      final int source,
+      @Nullable final String attribution) {
     final boolean isTracing = ComponentsSystrace.isTracing();
 
     if (isTracing) {
       ComponentsSystrace.beginSection("applyChangeSetToTarget");
     }
     boolean appliedChanges = false;
-    ChangeSet mergedChangeSet = null;
+    final List<Change> changes = new ArrayList<>();
     try {
       for (int i = 0, size = changeSets.size(); i < size; i++) {
         final ChangeSet changeSet = changeSets.get(i);
@@ -1357,20 +1372,28 @@ public class SectionTree {
           }
           mTarget.dispatchLastEvent();
         }
-        mergedChangeSet = ChangeSet.merge(mergedChangeSet, changeSet);
+        changes.addAll(changeSet.getChanges());
       }
 
       final boolean isDataChanged = appliedChanges;
-      final ChangesInfo changesInfo =
-          new ChangesInfo(
-              mergedChangeSet != null
-                  ? mergedChangeSet.getChanges()
-                  : Collections.<Change>emptyList());
+      final ChangesInfo changesInfo = new ChangesInfo(changes);
       mTarget.notifyChangeSetComplete(
           isDataChanged,
           new ChangeSetCompleteCallback() {
             @Override
             public void onDataBound() {
+              if (mChangesetDebug != null) {
+                mChangesetDebug.onChangesetApplied(
+                    mCurrentSection,
+                    oldSection,
+                    changesInfo,
+                    mContext.getLogTag() == null
+                        ? "SectionTree" + SectionTree.this.mTag
+                        : mContext.getLogTag(),
+                    source,
+                    attribution);
+              }
+
               if (!isDataChanged) {
                 return;
               }
@@ -1403,7 +1426,7 @@ public class SectionTree {
       SectionContext context,
       Section currentRoot,
       Section nextRoot,
-      Map<String, List<StateUpdate>> pendingStateUpdates,
+      Map<String, List<StateContainer.StateUpdate>> pendingStateUpdates,
       SectionsDebugLogger sectionsDebugLogger,
       String sectionTreeTag,
       boolean enableStats) {
@@ -1451,7 +1474,7 @@ public class SectionTree {
       SectionContext context,
       Section currentRoot,
       Section nextRoot,
-      Map<String, List<StateUpdate>> pendingStateUpdates,
+      Map<String, List<StateContainer.StateUpdate>> pendingStateUpdates,
       SectionsDebugLogger sectionsDebugLogger,
       String sectionTreeTag) {
     if (nextRoot == null) {
@@ -1500,10 +1523,12 @@ public class SectionTree {
       }
 
       // TODO: t18544409 Make sure this is absolutely the best solution as this is an anti-pattern
-      final List<StateUpdate> stateUpdates = pendingStateUpdates.get(nextRoot.getGlobalKey());
+      final List<StateContainer.StateUpdate> stateUpdates =
+          pendingStateUpdates.get(nextRoot.getGlobalKey());
       if (stateUpdates != null) {
+        final StateContainer stateContainer = nextRoot.getStateContainer();
         for (int i = 0, size = stateUpdates.size(); i < size; i++) {
-          stateUpdates.get(i).updateState(nextRoot.getStateContainer());
+          stateContainer.applyStateUpdate(stateUpdates.get(i));
         }
 
         if (nextRoot.shouldComponentUpdate(currentRoot, nextRoot)) {
@@ -1591,13 +1616,13 @@ public class SectionTree {
     return sDefaultChangeSetThreadLooper;
   }
 
-  private static List<StateUpdate> acquireUpdatesList() {
+  private static List<StateContainer.StateUpdate> acquireUpdatesList() {
     //TODO use pools t11953296
     return new ArrayList<>();
   }
 
-  private static void releaseUpdatesList(List<StateUpdate> stateUpdates) {
-    //TODO use pools t11953296
+  private static void releaseUpdatesList(List<StateContainer.StateUpdate> stateUpdates) {
+    // TODO use pools t11953296
   }
 
   private static String getDebugInfo(SectionTree tree) {
@@ -1645,21 +1670,19 @@ public class SectionTree {
     private boolean mAsyncStateUpdates;
     private boolean mAsyncPropUpdates;
     private String mTag;
-    private LithoHandler mChangeSetThreadHandler;
+    private @Nullable LithoHandler mChangeSetThreadHandler;
     private boolean mForceSyncStateUpdates;
 
     private Builder(SectionContext componentContext, Target target) {
       mContext = componentContext;
       mTarget = target;
-      mAsyncStateUpdates = SectionsConfiguration.sectionComponentsAsyncStateUpdates;
-      mAsyncPropUpdates = SectionsConfiguration.sectionComponentsAsyncPropUpdates;
     }
 
     /**
      * An optional Handler where {@link ChangeSet} calculation should happen. If not provided the
      * framework will use its default background thread.
      */
-    public Builder changeSetThreadHandler(LithoHandler changeSetThreadHandler) {
+    public Builder changeSetThreadHandler(@Nullable LithoHandler changeSetThreadHandler) {
       mChangeSetThreadHandler = changeSetThreadHandler;
       return this;
     }
@@ -1719,15 +1742,16 @@ public class SectionTree {
    * we need in order to determine whether we need to execute another state update or not.
    */
   static class StateUpdatesHolder {
-    private Map<String, List<StateUpdate>> mAllStateUpdates;
-    private Map<String, List<StateUpdate>> mNonLazyStateUpdates;
+    private Map<String, List<StateContainer.StateUpdate>> mAllStateUpdates;
+    private Map<String, List<StateContainer.StateUpdate>> mNonLazyStateUpdates;
 
     StateUpdatesHolder() {
       mAllStateUpdates = new HashMap<>();
       mNonLazyStateUpdates = new HashMap<>();
     }
 
-    private void addStateUpdate(String key, StateUpdate stateUpdate, boolean isLazyStateUpdate) {
+    private void addStateUpdate(
+        String key, StateContainer.StateUpdate stateUpdate, boolean isLazyStateUpdate) {
       addStateUpdateForKey(key, stateUpdate, mAllStateUpdates);
 
       if (!isLazyStateUpdate) {
@@ -1736,8 +1760,10 @@ public class SectionTree {
     }
 
     private static void addStateUpdateForKey(
-        String key, StateUpdate stateUpdate, Map<String, List<StateUpdate>> map) {
-      List<StateUpdate> currentStateUpdatesForKey = map.get(key);
+        String key,
+        StateContainer.StateUpdate stateUpdate,
+        Map<String, List<StateContainer.StateUpdate>> map) {
+      List<StateContainer.StateUpdate> currentStateUpdatesForKey = map.get(key);
 
       if (currentStateUpdatesForKey == null) {
         currentStateUpdatesForKey = acquireUpdatesList();
@@ -1790,11 +1816,11 @@ public class SectionTree {
     }
 
     private static void removeCompletedStateUpdatesFromMap(
-        Map<String, List<StateUpdate>> currentStateUpdates,
-        Map<String, List<StateUpdate>> completedStateUpdates,
+        Map<String, List<StateContainer.StateUpdate>> currentStateUpdates,
+        Map<String, List<StateContainer.StateUpdate>> completedStateUpdates,
         String key) {
-      List<StateUpdate> completed = completedStateUpdates.get(key);
-      List<StateUpdate> current = currentStateUpdates.remove(key);
+      List<StateContainer.StateUpdate> completed = completedStateUpdates.get(key);
+      List<StateContainer.StateUpdate> current = currentStateUpdates.remove(key);
       if (completed != null && current != null) {
         current.removeAll(completed);
       }

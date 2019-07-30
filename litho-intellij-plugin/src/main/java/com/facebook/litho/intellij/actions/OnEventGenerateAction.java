@@ -16,7 +16,10 @@
 package com.facebook.litho.intellij.actions;
 
 import com.facebook.litho.intellij.LithoPluginUtils;
+import com.facebook.litho.intellij.completion.ComponentGenerateUtils;
 import com.facebook.litho.intellij.completion.OnEventGenerateUtils;
+import com.facebook.litho.intellij.extensions.EventLogger;
+import com.facebook.litho.intellij.logging.LithoLoggerProvider;
 import com.intellij.codeInsight.generation.ClassMember;
 import com.intellij.codeInsight.generation.GenerateMembersHandlerBase;
 import com.intellij.codeInsight.generation.GenerationInfo;
@@ -38,7 +41,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
 
-/** Generates a method handling Litho event. https://fblitho.com/docs/events-overview */
+/**
+ * Generates a method handling Litho event in the Litho Spec.
+ * https://fblitho.com/docs/events-overview
+ */
 public class OnEventGenerateAction extends BaseGenerateAction {
   public OnEventGenerateAction() {
     super(new OnEventGenerateHandler());
@@ -52,6 +58,15 @@ public class OnEventGenerateAction extends BaseGenerateAction {
     if (!LithoPluginUtils.isLithoSpec(file)) {
       e.getPresentation().setEnabledAndVisible(false);
     }
+  }
+
+  @Override
+  public void actionPerformed(AnActionEvent e) {
+    super.actionPerformed(e);
+    LithoLoggerProvider.getEventLogger().log(EventLogger.EVENT_ON_EVENT_GENERATION);
+    final PsiFile file = e.getData(CommonDataKeys.PSI_FILE);
+    LithoPluginUtils.getFirstLayoutSpec(file)
+        .ifPresent(ComponentGenerateUtils::updateLayoutComponent);
   }
 
   /**

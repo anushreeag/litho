@@ -33,8 +33,12 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.text.Editable;
 import android.text.InputFilter;
+import android.text.Spannable;
+import android.text.SpannedString;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.method.ArrowKeyMovementMethod;
+import android.text.method.MovementMethod;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -134,6 +138,7 @@ import javax.annotation.Nullable;
  * @prop cursorDrawableRes Drawable to set as an edit text cursor.
  * @prop textColorStateList ColorStateList of the text.
  * @prop hintTextColorStateList ColorStateList of the hint text.
+ * @prop highlightColor Color for selected text.
  * @prop textSize Size of the text.
  * @prop typeface Typeface for the text.
  * @prop textAlignment Alignment of the text within its container. This only has effect on API level
@@ -151,6 +156,8 @@ import javax.annotation.Nullable;
  * @prop minLines Minimum number of lines to show.
  * @prop maxLines Maximum number of lines to show.
  * @prop textWatchers Used to register text watchers e.g. mentions detection.
+ * @prop movementMethod Used to set cursor positioning, scrolling and text selection functionality
+ *     in EditText
  * @see {@link EditText}
  */
 @MountSpec(
@@ -191,6 +198,9 @@ class TextInputSpec {
   @PropDefault protected static final int minLines = 1;
   @PropDefault protected static final int maxLines = Integer.MAX_VALUE;
 
+  @PropDefault
+  protected static final MovementMethod movementMethod = ArrowKeyMovementMethod.getInstance();
+
   /** UI thread only; used in OnMount. */
   private static final Rect sBackgroundPaddingRect = new Rect();
   /** UI thread only; used in OnMount. */
@@ -223,6 +233,7 @@ class TextInputSpec {
       @Prop(optional = true, resType = ResType.COLOR) int shadowColor,
       @Prop(optional = true) ColorStateList textColorStateList,
       @Prop(optional = true) ColorStateList hintColorStateList,
+      @Prop(optional = true, resType = ResType.COLOR) int highlightColor,
       @Prop(optional = true, resType = ResType.DIMEN_TEXT) int textSize,
       @Prop(optional = true) Typeface typeface,
       @Prop(optional = true) int textAlignment,
@@ -241,6 +252,11 @@ class TextInputSpec {
 
     // The height should be the measured height of EditText with relevant params
     final EditText forMeasure = new ForMeasureEditText(c.getAndroidContext());
+    // If text contains Spans, we don't want it to be mutable for the measurement case
+    CharSequence text = savedText.get();
+    if (text instanceof Spannable) {
+      text = new SpannedString(text);
+    }
     setParams(
         forMeasure,
         hint,
@@ -252,6 +268,7 @@ class TextInputSpec {
         shadowColor,
         textColorStateList,
         hintColorStateList,
+        highlightColor,
         textSize,
         typeface,
         textAlignment,
@@ -265,10 +282,11 @@ class TextInputSpec {
         minLines,
         maxLines,
         cursorDrawableRes,
+        forMeasure.getMovementMethod(),
         // onMeasure happens:
         // 1. After initState before onMount: savedText = initText.
         // 2. After onMount before onUnmount: savedText preserved from underlying editText.
-        savedText.get());
+        text);
     forMeasure.measure(
         MeasureUtils.getViewMeasureSpec(widthSpec), MeasureUtils.getViewMeasureSpec(heightSpec));
 
@@ -292,6 +310,7 @@ class TextInputSpec {
       int shadowColor,
       ColorStateList textColorStateList,
       ColorStateList hintColorStateList,
+      int highlightColor,
       int textSize,
       Typeface typeface,
       int textAlignment,
@@ -305,6 +324,7 @@ class TextInputSpec {
       int minLines,
       int maxLines,
       int cursorDrawableRes,
+      MovementMethod movementMethod,
       @Nullable CharSequence text) {
     if (multiline) {
       inputType |= EditorInfo.TYPE_CLASS_TEXT | EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -348,6 +368,8 @@ class TextInputSpec {
     editText.setCursorVisible(editable);
     editText.setTextColor(textColorStateList);
     editText.setHintTextColor(hintColorStateList);
+    editText.setHighlightColor(highlightColor);
+    editText.setMovementMethod(movementMethod);
 
     if (cursorDrawableRes != -1) {
       try {
@@ -388,6 +410,7 @@ class TextInputSpec {
       @Prop(optional = true, resType = ResType.COLOR) Diff<Integer> shadowColor,
       @Prop(optional = true) Diff<ColorStateList> textColorStateList,
       @Prop(optional = true) Diff<ColorStateList> hintColorStateList,
+      @Prop(optional = true, resType = ResType.COLOR) Diff<Integer> highlightColor,
       @Prop(optional = true, resType = ResType.DIMEN_TEXT) Diff<Integer> textSize,
       @Prop(optional = true) Diff<Typeface> typeface,
       @Prop(optional = true) Diff<Integer> textAlignment,
@@ -401,6 +424,7 @@ class TextInputSpec {
       @Prop(optional = true) Diff<Integer> minLines,
       @Prop(optional = true) Diff<Integer> maxLines,
       @Prop(optional = true) Diff<Integer> cursorDrawableRes,
+      @Prop(optional = true) Diff<MovementMethod> movementMethod,
       @State Diff<Integer> measureSeqNumber) {
     if (!equals(measureSeqNumber.getPrevious(), measureSeqNumber.getNext())) {
       return true;
@@ -427,6 +451,9 @@ class TextInputSpec {
       return true;
     }
     if (!equals(hintColorStateList.getPrevious(), hintColorStateList.getNext())) {
+      return true;
+    }
+    if (!equals(highlightColor.getPrevious(), highlightColor.getNext())) {
       return true;
     }
     if (!equals(textSize.getPrevious(), textSize.getNext())) {
@@ -469,6 +496,9 @@ class TextInputSpec {
       }
     }
     if (!equals(cursorDrawableRes.getPrevious(), cursorDrawableRes.getNext())) {
+      return true;
+    }
+    if (!equals(movementMethod.getPrevious(), movementMethod.getNext())) {
       return true;
     }
     // Save the nastiest for last: trying to diff drawables.
@@ -554,6 +584,7 @@ class TextInputSpec {
       @Prop(optional = true, resType = ResType.COLOR) int shadowColor,
       @Prop(optional = true) ColorStateList textColorStateList,
       @Prop(optional = true) ColorStateList hintColorStateList,
+      @Prop(optional = true, resType = ResType.COLOR) int highlightColor,
       @Prop(optional = true, resType = ResType.DIMEN_TEXT) int textSize,
       @Prop(optional = true) Typeface typeface,
       @Prop(optional = true) int textAlignment,
@@ -567,6 +598,7 @@ class TextInputSpec {
       @Prop(optional = true) int maxLines,
       @Prop(optional = true) TextUtils.TruncateAt ellipsize,
       @Prop(optional = true) int cursorDrawableRes,
+      @Prop(optional = true) MovementMethod movementMethod,
       @State AtomicReference<CharSequence> savedText,
       @State AtomicReference<EditTextWithEventHandlers> mountedView) {
     mountedView.set(editText);
@@ -581,6 +613,7 @@ class TextInputSpec {
         shadowColor,
         textColorStateList,
         hintColorStateList,
+        highlightColor,
         textSize,
         typeface,
         textAlignment,
@@ -594,6 +627,7 @@ class TextInputSpec {
         minLines,
         maxLines,
         cursorDrawableRes,
+        movementMethod,
         // onMount happens:
         // 1. After initState: savedText = initText.
         // 2. After onUnmount: savedText preserved from underlying editText.

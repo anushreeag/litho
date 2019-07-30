@@ -92,11 +92,7 @@ class SampleComponentsLogger : BaseComponentsLogger() {
 
     private fun getEventNameById(@FrameworkLogEvents.LogEventId markerId: Int): String =
             when (markerId) {
-                FrameworkLogEvents.EVENT_CREATE_LAYOUT                     -> "CREATE_LAYOUT"
-                FrameworkLogEvents.EVENT_CSS_LAYOUT                        -> "CSS_LAYOUT"
-                FrameworkLogEvents.EVENT_COLLECT_RESULTS                   -> "COLLECT_RESULTS"
                 FrameworkLogEvents.EVENT_LAYOUT_CALCULATE                  -> "LAYOUT_CALCULATE"
-                FrameworkLogEvents.EVENT_PREPARE_MOUNT                     -> "PREPARE_MOUNT"
                 FrameworkLogEvents.EVENT_MOUNT                             -> "MOUNT"
                 FrameworkLogEvents.EVENT_PRE_ALLOCATE_MOUNT_CONTENT        -> "PRE_ALLOCATE_MOUNT_CONTENT"
                 FrameworkLogEvents.EVENT_SECTIONS_CREATE_NEW_TREE          -> "SECTIONS_CREATE_NEW_TREE"
@@ -105,7 +101,6 @@ class SampleComponentsLogger : BaseComponentsLogger() {
                 FrameworkLogEvents.EVENT_SECTIONS_ON_CREATE_CHILDREN       -> "SECTIONS_ON_CREATE_CHILDREN"
                 FrameworkLogEvents.EVENT_SECTIONS_SET_ROOT                 -> "SECTIONS_SET_ROOT"
                 FrameworkLogEvents.EVENT_CALCULATE_LAYOUT_STATE            -> "CALCULATE_LAYOUT_STATE"
-                FrameworkLogEvents.EVENT_DRAW                              -> "DRAW"
                 else                                                       -> "UNKNOWN"
             }
 

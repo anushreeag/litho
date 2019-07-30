@@ -17,7 +17,6 @@
 package com.facebook.litho;
 
 import static android.os.Process.THREAD_PRIORITY_DEFAULT;
-import static com.facebook.litho.ComponentLifecycle.StateUpdate;
 import static com.facebook.litho.FrameworkLogEvents.EVENT_LAYOUT_CALCULATE;
 import static com.facebook.litho.FrameworkLogEvents.EVENT_PRE_ALLOCATE_MOUNT_CONTENT;
 import static com.facebook.litho.FrameworkLogEvents.PARAM_ATTRIBUTION;
@@ -26,9 +25,13 @@ import static com.facebook.litho.FrameworkLogEvents.PARAM_ROOT_COMPONENT;
 import static com.facebook.litho.FrameworkLogEvents.PARAM_TREE_DIFF_ENABLED;
 import static com.facebook.litho.HandlerInstrumenter.instrumentLithoHandler;
 import static com.facebook.litho.LayoutState.CalculateLayoutSource;
+import static com.facebook.litho.StateContainer.StateUpdate;
 import static com.facebook.litho.ThreadUtils.assertHoldsLock;
 import static com.facebook.litho.ThreadUtils.assertMainThread;
 import static com.facebook.litho.ThreadUtils.isMainThread;
+import static com.facebook.litho.WorkContinuationInstrumenter.onBeginWorkContinuation;
+import static com.facebook.litho.WorkContinuationInstrumenter.onEndWorkContinuation;
+import static com.facebook.litho.WorkContinuationInstrumenter.onOfferWorkForContinuation;
 import static com.facebook.litho.config.ComponentsConfiguration.DEFAULT_BACKGROUND_THREAD_PRIORITY;
 
 import android.content.Context;
@@ -63,7 +66,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.annotation.CheckReturnValue;
 import javax.annotation.concurrent.GuardedBy;
@@ -300,8 +302,6 @@ public class ComponentTree {
     mCreateInitialStateOncePerThread =
         ComponentsConfiguration.createInitialStateOncePerThread || mUseCancelableLayoutFutures;
 
-    ensureLayoutThreadHandler();
-
     if (mPreAllocateMountContentHandler == null && builder.canPreallocateOnDefaultHandler) {
       mPreAllocateMountContentHandler =
           new DefaultLithoHandler(getDefaultPreallocateMountContentThreadLooper());
@@ -333,18 +333,20 @@ public class ComponentTree {
 
     // Instrument LithoHandlers.
     mMainThreadHandler = instrumentLithoHandler(mMainThreadHandler);
-    mLayoutThreadHandler = instrumentLithoHandler(mLayoutThreadHandler);
-    mPreAllocateMountContentHandler = instrumentLithoHandler(mPreAllocateMountContentHandler);
+    mLayoutThreadHandler = ensureAndInstrumentLayoutThreadHandler(mLayoutThreadHandler);
+    if (mPreAllocateMountContentHandler != null) {
+      mPreAllocateMountContentHandler = instrumentLithoHandler(mPreAllocateMountContentHandler);
+    }
   }
 
-  private void ensureLayoutThreadHandler() {
-    if (mLayoutThreadHandler == null) {
-      mLayoutThreadHandler =
+  private static LithoHandler ensureAndInstrumentLayoutThreadHandler(
+      @Nullable LithoHandler handler) {
+    if (handler == null) {
+      handler =
           ComponentsConfiguration.threadPoolForBackgroundThreadsConfig == null
               ? new DefaultLithoHandler(getDefaultLayoutThreadLooper())
               : new ThreadPoolLayoutHandler(
                   ComponentsConfiguration.threadPoolForBackgroundThreadsConfig);
-      mLayoutThreadHandler = instrumentLithoHandler(mLayoutThreadHandler);
     } else {
       if (sDefaultLayoutThreadLooper != null
           && sBoostPerfLayoutStateFuture == false
@@ -358,6 +360,7 @@ public class ComponentTree {
         sBoostPerfLayoutStateFuture = true;
       }
     }
+    return instrumentLithoHandler(handler);
   }
 
   @Nullable
@@ -456,8 +459,7 @@ public class ComponentTree {
         mLayoutThreadHandler.remove(mCurrentCalculateLayoutRunnable);
       }
     }
-    mLayoutThreadHandler = instrumentLithoHandler(layoutThreadHandler);
-    ensureLayoutThreadHandler();
+    mLayoutThreadHandler = ensureAndInstrumentLayoutThreadHandler(layoutThreadHandler);
   }
 
   @VisibleForTesting
@@ -2311,9 +2313,12 @@ public class ComponentTree {
     private final FutureTask<LayoutState> futureTask;
     private final AtomicInteger refCount = new AtomicInteger(0);
     private final boolean isFromSyncLayout;
-    private final AtomicBoolean interrupted = new AtomicBoolean(false);
+    private volatile boolean interrupted;
     private final int source;
     private final String extraAttribution;
+
+    @Nullable private volatile Object interruptToken;
+    @Nullable private volatile Object continuationToken;
 
     @GuardedBy("LayoutStateFuture.this")
     private volatile boolean released = false;
@@ -2400,6 +2405,7 @@ public class ComponentTree {
         return;
       }
       layoutState = null;
+      interruptToken = continuationToken = null;
       released = true;
     }
 
@@ -2408,11 +2414,11 @@ public class ComponentTree {
     }
 
     boolean isInterrupted() {
-      return !ThreadUtils.isMainThread() && interrupted.get();
+      return !ThreadUtils.isMainThread() && interrupted;
     }
 
     void interrupt() {
-      interrupted.set(true);
+      interrupted = true;
     }
 
     void unregisterForResponse() {
@@ -2458,8 +2464,9 @@ public class ComponentTree {
       final int runningThreadId = this.runningThreadId.get();
       final int originalThreadPriority;
       final boolean didRaiseThreadPriority;
+      final boolean notRunningOnMyThread = runningThreadId != Process.myTid();
 
-      if (isMainThread() && !futureTask.isDone() && runningThreadId != Process.myTid()) {
+      if (isMainThread() && !futureTask.isDone() && notRunningOnMyThread) {
         // Main thread is about to be blocked, raise the running thread priority.
         originalThreadPriority =
             ComponentsConfiguration.inheritPriorityFromUiThread
@@ -2475,7 +2482,17 @@ public class ComponentTree {
 
       final LayoutState result;
       try {
+        final boolean shouldTrace = notRunningOnMyThread && ComponentsSystrace.isTracing();
+        if (shouldTrace) {
+          ComponentsSystrace.beginSectionWithArgs("LayoutStateFuture.get")
+              .arg("root", root.getSimpleName())
+              .arg("runningThreadId", runningThreadId)
+              .flush();
+        }
         result = futureTask.get();
+        if (shouldTrace) {
+          ComponentsSystrace.endSection();
+        }
       } catch (ExecutionException e) {
         final Throwable cause = e.getCause();
         if (cause instanceof RuntimeException) {
@@ -2520,23 +2537,34 @@ public class ComponentTree {
         // the bg task is interrupted.
         if (!isFromSyncLayout) {
           interrupt();
+          interruptToken =
+              WorkContinuationInstrumenter.onAskForWorkToContinue("interruptCalculateLayout");
         }
       }
 
       LayoutState result;
       try {
         result = futureTask.get();
-        if (interrupted.get() && result.isPartialLayoutState()) {
+        if (interrupted && result.isPartialLayoutState()) {
           if (ThreadUtils.isMainThread()) {
             // This means that the bg task was interrupted and it returned a partially resolved
             // InternalNode. We need to finish computing this LayoutState.
-
-            result = resolvePartialInternalNodeAndCalculateLayout(result);
+            final Object token =
+                onBeginWorkContinuation("continuePartialLayoutState", continuationToken);
+            continuationToken = null;
+            try {
+              result = resolvePartialInternalNodeAndCalculateLayout(result);
+            } finally {
+              onEndWorkContinuation(token);
+            }
           } else {
             // This means that the bg task was interrupted and the UI thread will pick up the rest
             // of
             // the work. No need to return a LayoutState.
             result = null;
+            continuationToken =
+                onOfferWorkForContinuation("offerPartialLayoutState", interruptToken);
+            interruptToken = null;
           }
         }
 
@@ -2706,12 +2734,9 @@ public class ComponentTree {
     /**
      * Whether or not to enable the incremental mount optimization. True by default.
      *
-     * <p>IMPORTANT: if you set this to false, visibility events will not fire.
-     *
-     * @deprecated Please don't use this unless you really need to. It is intended that this option
-     *     be removed in the future.
+     * <p>IMPORTANT: if you set this to false, visibility events will NOT FIRE. Please don't use
+     * this unless you really need to.
      */
-    @Deprecated
     public Builder incrementalMount(boolean isEnabled) {
       incrementalMountEnabled = isEnabled;
       return this;

@@ -101,7 +101,7 @@ public class RecyclerEventsControllerTest {
     mRecyclerEventsController.clearRefreshing();
 
     verifySetRefreshingWasCalledNTimesWith(mSectionsRecyclerView, 1);
-    assertThat(mSectionsRecyclerView.isRefreshing()).isEqualTo(false);
+    assertThat(mSectionsRecyclerView.isRefreshing()).isFalse();
     verifyRemoveCallbacksWasCalledNTimes(mSectionsRecyclerView, 0);
     verifyPostWasCalledNTimes(mSectionsRecyclerView, 0);
   }
@@ -124,7 +124,7 @@ public class RecyclerEventsControllerTest {
 
     mRecyclerEventsController.showRefreshing();
     verifySetRefreshingWasCalledNTimesWith(mSectionsRecyclerView, 1);
-    assertThat(mSectionsRecyclerView.isRefreshing()).isEqualTo(true);
+    assertThat(mSectionsRecyclerView.isRefreshing()).isTrue();
   }
 
   @Test

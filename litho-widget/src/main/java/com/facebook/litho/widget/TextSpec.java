@@ -80,7 +80,23 @@ import com.facebook.widget.accessibility.delegates.AccessibleClickableSpan;
 import com.facebook.yoga.YogaDirection;
 
 /**
- * Component to render text.
+ * Component to render text. See <a href="https://fblitho.com/docs/widgets#text">text-widget</a> for
+ * more details.
+ *
+ * <p>Example Text usage:
+ *
+ * <pre>{@code
+ * final SpannableStringBuilder spannable = new SpannableStringBuilder();
+ * spannable.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_INCLUSIVE_INCLUSIVE);
+ *
+ * Text.create(c)
+ *    .text(spannable) // String can be used
+ *    .textSizeDip(20)
+ *    .maxLines(3)
+ *    .ellipsize(TextUtils.TruncateAt.END)
+ *    .textColor(Color.BLACK)
+ *    .build()
+ * }</pre>
  *
  * @uidocs https://fburl.com/Text:b8f5
  * @prop text Text to display.
@@ -141,11 +157,10 @@ import com.facebook.yoga.YogaDirection;
  *     line of text).
  */
 @MountSpec(
-  isPureRender = true,
-  shouldUseDisplayList = true,
-  poolSize = 30,
-  events = {TextOffsetOnTouchEvent.class}
-)
+    isPureRender = true,
+    shouldUseDisplayList = true,
+    poolSize = 30,
+    events = {TextOffsetOnTouchEvent.class})
 class TextSpec {
 
   private static final Typeface DEFAULT_TYPEFACE = Typeface.DEFAULT;
@@ -164,9 +179,12 @@ class TextSpec {
   @PropDefault protected static final int shadowColor = Color.GRAY;
   @PropDefault protected static final int textColor = DEFAULT_COLOR;
   @PropDefault protected static final int linkColor = DEFAULT_COLOR;
-  @PropDefault protected static final ColorStateList textColorStateList = new ColorStateList(
-      DEFAULT_TEXT_COLOR_STATE_LIST_STATES,
-      DEFAULT_TEXT_COLOR_STATE_LIST_COLORS);
+
+  @PropDefault
+  protected static final ColorStateList textColorStateList =
+      new ColorStateList(
+          DEFAULT_TEXT_COLOR_STATE_LIST_STATES, DEFAULT_TEXT_COLOR_STATE_LIST_COLORS);
+
   @PropDefault protected static final int textSize = 13;
   @PropDefault protected static final int textStyle = DEFAULT_TYPEFACE.getStyle();
   @PropDefault protected static final Typeface typeface = DEFAULT_TYPEFACE;
@@ -492,9 +510,10 @@ class TextSpec {
     if (textDirection != null) {
       layoutBuilder.setTextDirection(textDirection);
     } else {
-      layoutBuilder.setTextDirection(layoutDirection == YogaDirection.RTL
-          ? TextDirectionHeuristicsCompat.FIRSTSTRONG_RTL
-          : TextDirectionHeuristicsCompat.FIRSTSTRONG_LTR);
+      layoutBuilder.setTextDirection(
+          layoutDirection == YogaDirection.RTL
+              ? TextDirectionHeuristicsCompat.FIRSTSTRONG_RTL
+              : TextDirectionHeuristicsCompat.FIRSTSTRONG_LTR);
     }
 
     newLayout = layoutBuilder.build();
@@ -560,9 +579,7 @@ class TextSpec {
     final float layoutHeight =
         layout.getHeight() - layout.getPaddingTop() - layout.getPaddingBottom();
 
-    if (measureLayout != null &&
-        measuredWidth == layoutWidth &&
-        measuredHeight == layoutHeight) {
+    if (measureLayout != null && measuredWidth == layoutWidth && measuredHeight == layoutHeight) {
       textLayout.set(measureLayout);
     } else {
       textLayout.set(
@@ -622,7 +639,8 @@ class TextSpec {
       final int ellipsizedLineNumber = getEllipsizedLineNumber(textLayout.get());
       if (ellipsizedLineNumber != -1) {
         final CharSequence truncated =
-            truncateText(text, customEllipsisText, textLayout.get(), ellipsizedLineNumber);
+            truncateText(
+                text, customEllipsisText, textLayout.get(), ellipsizedLineNumber, layoutWidth);
 
         Layout newLayout =
             createTextLayout(
@@ -688,13 +706,14 @@ class TextSpec {
       CharSequence text,
       CharSequence customEllipsisText,
       Layout newLayout,
-      int ellipsizedLineNumber) {
+      int ellipsizedLineNumber,
+      float layoutWidth) {
     Rect bounds = new Rect();
     newLayout
         .getPaint()
         .getTextBounds(customEllipsisText.toString(), 0, customEllipsisText.length(), bounds);
     // Identify the X position at which to truncate the final line:
-    final float ellipsisTarget = newLayout.getLineMax(ellipsizedLineNumber) - bounds.width();
+    final float ellipsisTarget = layoutWidth - bounds.width();
     // Get character offset number corresponding to that X position:
     final int ellipsisOffset =
         newLayout.getOffsetForHorizontal(ellipsizedLineNumber, ellipsisTarget);
@@ -850,7 +869,7 @@ class TextSpec {
         startLine == endLine ? end : textLayout.getLineVisibleEnd(startLine);
 
     textLayout.getSelectionPath(start, selectionPathEnd, sTempPath);
-    sTempPath.computeBounds(sTempRectF, /* unused */true);
+    sTempPath.computeBounds(sTempRectF, /* unused */ true);
 
     sTempRect.set(
         componentBoundsLeft + (int) sTempRectF.left,
@@ -902,7 +921,7 @@ class TextSpec {
       final int end = spanned.getSpanEnd(span);
 
       textLayout.getSelectionPath(start, end, sTempPath);
-      sTempPath.computeBounds(sTempRectF, /* unused */true);
+      sTempPath.computeBounds(sTempRectF, /* unused */ true);
 
       if (sTempRectF.contains(x, y)) {
         return i;

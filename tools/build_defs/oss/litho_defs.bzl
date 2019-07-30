@@ -38,15 +38,23 @@ LITHO_LITHO_FRESCO_TARGET = make_dep_path("litho-fresco/src/main/java/com/facebo
 
 LITHO_STATS_TARGET = make_dep_path("litho-core/src/main/java/com/facebook/litho/stats:stats")
 
-LITHO_TESTING_CORE_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho:litho")
+LITHO_TESTING_CORE_V3_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho:litho")
 
-LITHO_TESTING_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing:testing")
+LITHO_TESTING_CORE_V4_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho:litho-v4")
+
+LITHO_TESTING_V3_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing:testing")
+
+LITHO_TESTING_V4_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing:testing-v4")
 
 LITHO_TESTING_WHITEBOX_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing:whitebox")
 
-LITHO_TESTING_ASSERTJ_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing/assertj:assertj")
+LITHO_TESTING_ASSERTJ_V3_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing/assertj:assertj")
 
-LITHO_TESTING_HELPER_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing/helper:helper")
+LITHO_TESTING_ASSERTJ_V4_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing/assertj:assertj-v4")
+
+LITHO_TESTING_HELPER_V3_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing/helper:helper")
+
+LITHO_TESTING_HELPER_V4_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing/helper:helper-v4")
 
 LITHO_TESTING_SUBCOMPONENTS_TARGET = make_dep_path("litho-testing/src/main/java/com/facebook/litho/testing/subcomponents:subcomponents")
 
@@ -139,7 +147,9 @@ LITHO_JAVAC_TOOLS_TARGET = make_dep_path("lib/javac-tools:javac-tools")
 # Fresco
 LITHO_FRESCO_TARGET = make_dep_path("lib/fresco:fresco")
 
-LITHO_ROBOLECTRIC_TARGET = make_dep_path("lib/robolectric3:robolectric3")
+LITHO_ROBOLECTRIC_V3_TARGET = make_dep_path("lib/robolectric3:robolectric3")
+
+LITHO_ROBOLECTRIC_V4_TARGET = make_dep_path("lib/robolectric4:robolectric4")
 
 LITHO_JUNIT_TARGET = make_dep_path("lib/junit:junit")
 
@@ -247,6 +257,10 @@ def fb_android_resource(**kwargs):
     kwargs.pop("is_androidx", False)
     android_resource(**kwargs)
 
+def fb_java_binary(**kwargs):
+    """Delegates to native java_binary rule."""
+    native.java_binary(**kwargs)
+
 def fb_java_library(**kwargs):
     """Delegates to native java_library rule."""
 
@@ -306,6 +320,7 @@ def define_fbjni_targets():
         exported_headers = subdir_glob(
             [
                 ("src/main/cpp", "fb/**/*.h"),
+                ("src/main/cpp", "fbjni/**/*.h"),
             ],
         ),
         compiler_flags = [
@@ -392,9 +407,9 @@ def define_cpp_yoga_targets():
     )
     fb_xplat_cxx_library(
         name = "yoga",
-        srcs = native.glob(["yoga/*.cpp"]),
+        srcs = native.glob(["yoga/**/*.cpp"]),
         header_namespace = "",
-        exported_headers = native.glob(["yoga/*.h"]),
+        exported_headers = native.glob(["yoga/**/*.h"]),
         compiler_flags = [
             "-fno-omit-frame-pointer",
             "-fexceptions",

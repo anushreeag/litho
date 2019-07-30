@@ -15,8 +15,12 @@
  */
 package com.facebook.litho.intellij.completion;
 
+import static com.intellij.patterns.StandardPatterns.or;
+
 import com.facebook.litho.intellij.LithoClassNames;
 import com.facebook.litho.intellij.LithoPluginUtils;
+import com.facebook.litho.intellij.extensions.EventLogger;
+import com.facebook.litho.intellij.logging.LithoLoggerProvider;
 import com.intellij.codeInsight.completion.CompletionContributor;
 import com.intellij.codeInsight.completion.CompletionParameters;
 import com.intellij.codeInsight.completion.CompletionProvider;
@@ -41,13 +45,25 @@ import java.util.Collections;
 import javax.swing.Icon;
 import org.jetbrains.annotations.NotNull;
 
+/** Contributor suggests completion for the Click event in the Litho Spec. */
 public class OnEventCompletionContributor extends CompletionContributor {
 
   public OnEventCompletionContributor() {
-    extend(CompletionType.BASIC, codeReferencePattern(), typeCompletionProvider());
+    extend(
+        CompletionType.BASIC,
+        or(annotationInClass(), annotationAboveMethod()),
+        typeCompletionProvider());
   }
 
-  private ElementPattern<? extends PsiElement> codeReferencePattern() {
+  private ElementPattern<? extends PsiElement> annotationAboveMethod() {
+    // PsiIdentifier -> PsiJavaCodeReference -> PsiAnnotation -> PsiModifierList -> PsiMethod
+    return PlatformPatterns.psiElement(PsiIdentifier.class)
+        .withSuperParent(2, PsiAnnotation.class)
+        .withSuperParent(4, PsiMethod.class)
+        .withLanguage(JavaLanguage.INSTANCE);
+  }
+
+  private ElementPattern<? extends PsiElement> annotationInClass() {
     // PsiIdentifier -> PsiJavaCodeReference -> PsiAnnotation -> PsiModifierList -> PsiClass
     return PlatformPatterns.psiElement(PsiIdentifier.class)
         .withSuperParent(2, PsiAnnotation.class)
@@ -67,12 +83,12 @@ public class OnEventCompletionContributor extends CompletionContributor {
         if (parentElement == null) {
           return;
         }
-        PsiClass parentClass = (PsiClass) parentElement;
-        if (!LithoPluginUtils.isLithoSpec(parentClass)) {
+        PsiClass lithoSpecCls = (PsiClass) parentElement;
+        if (!LithoPluginUtils.isLithoSpec(lithoSpecCls)) {
           return;
         }
         PsiMethod onEventMethod = createOnClickEventMethod(element);
-        result.addElement(createMethodAnnotationLookup(onEventMethod));
+        result.addElement(createMethodAnnotationLookup(onEventMethod, lithoSpecCls));
       }
 
       private PsiMethod createOnClickEventMethod(PsiElement element) {
@@ -93,7 +109,8 @@ public class OnEventCompletionContributor extends CompletionContributor {
   }
 
   @NotNull
-  private LookupElementBuilder createMethodAnnotationLookup(PsiMethod method) {
+  private LookupElementBuilder createMethodAnnotationLookup(
+      PsiMethod method, PsiClass parentClass) {
     Icon icon = method.getIcon(Iconable.ICON_FLAG_VISIBILITY);
     LookupElementBuilder elementBuilder =
         LookupElementBuilder.create(method)
@@ -112,6 +129,9 @@ public class OnEventCompletionContributor extends CompletionContributor {
                           insertionContext.getProject(),
                           insertionContext.getEditor(),
                           insertionContext.getFile());
+
+                  LithoLoggerProvider.getEventLogger().log(EventLogger.EVENT_ON_EVENT_COMPLETION);
+                  ComponentGenerateUtils.updateLayoutComponent(parentClass);
                 })
             .appendTailText(" {...}", true)
             .withTypeText("LayoutSpec")
