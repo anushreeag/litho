@@ -21,6 +21,7 @@ import static com.facebook.litho.SizeSpec.EXACTLY;
 import static com.facebook.litho.SizeSpec.UNSPECIFIED;
 
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.os.Build;
 import android.view.MotionEvent;
 import android.view.ViewTreeObserver;
@@ -52,6 +53,8 @@ import com.facebook.litho.annotations.PropDefault;
 import com.facebook.litho.annotations.ResType;
 import com.facebook.litho.annotations.ShouldUpdate;
 import com.facebook.litho.annotations.State;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 /**
  * Component that wraps another component, allowing it to be vertically scrollable. It's analogous
@@ -258,7 +261,16 @@ public class VerticalScrollSpec {
     LithoScrollView(Context context) {
       super(context);
       mLithoView = new LithoView(context);
-
+      // Need to manually call initializedScrollbars() if instantiating view programmatically
+      final TypedArray a = context.getTheme().obtainStyledAttributes(new int[0]);
+      try {
+        // initializeScrollbars(TypedArray)
+        Method initializeScrollbars = android.view.View.class.getDeclaredMethod("initializeScrollbars", TypedArray.class);
+        initializeScrollbars.invoke(this, a);
+      } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
+        e.printStackTrace();
+      }
+      a.recycle();
       addView(mLithoView);
     }
 
@@ -345,3 +357,4 @@ public class VerticalScrollSpec {
     boolean onInterceptTouch(NestedScrollView nestedScrollView, MotionEvent event);
   }
 }
+
